@@ -1,0 +1,9 @@
+httpx>=0.27
+beautifulsoup4>=4.12
+
+# --- optional quality upgrades ---
+# playwright>=1.44          # JS-heavy sites: pip install playwright && playwright install chromium
+# sentence-transformers>=2.7  # better semantic link-scent embeddings
+
+# --- any OpenAI-compatible LLM endpoint for reading-comprehension extraction ---
+# (Kimi / OpenAI / local vLLM). Configured via env vars, see .env.example
