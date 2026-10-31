@@ -27,6 +27,8 @@ class AnswerSpec:
     question: str
     type: AnswerType = AnswerType.TEXT
     hints: list = field(default_factory=list)
+    subject: list = field(default_factory=list)      # named things: "Phone X", "PEP 8"
+    attributes: list = field(default_factory=list)   # what is asked about them: "price"
 
 
 @dataclass
@@ -34,6 +36,18 @@ class Link:
     url: str
     anchor: str = ""
     context: str = ""
+
+
+@dataclass
+class Unit:
+    """One atomic piece of a page: a sentence-bearing block or a label/value pair."""
+    text: str
+    kind: str = "block"   # block | kv | list | heading
+    label: str = ""
+    value: str = ""
+    heading: str = ""
+    row: bool = False     # one row of a table of named items: it speaks only for the item it names
+    lead: bool = False    # first short block under its heading: the heading acts as its label
 
 
 @dataclass
@@ -60,6 +74,7 @@ class Evidence:
     page: Page = None
     source: str = ""
     verified_by: str = ""
+    context: str = ""     # heading the quote sits under, set only by deterministic extractors
 
 
 @dataclass

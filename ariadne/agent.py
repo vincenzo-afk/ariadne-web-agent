@@ -1,22 +1,15 @@
 import time
-from urllib.parse import quote_plus, urljoin, urlparse
+from urllib.parse import quote_plus, urljoin
 
 from .extract import llm_candidates, rule_candidates, structured_candidates
 from .fetch import Fetcher
 from .llm import RateLimited
 from .ledger import Ledger
 from .models import AgentReport, Link, Verdict
-from .parse import extract_links, find_site_search, parse_sitemap_urls
-from .scent import scent_score
+from .parse import SKIP_EXT, extract_links, find_site_search, normalize_url, parse_sitemap_urls, same_site
+from .scent import score_links
 from .understand import classify
 from .verify import verify
-
-
-def same_site(url, base):
-    a = urlparse(url).netloc.lower()
-    b = urlparse(base).netloc.lower()
-    a, b = a.removeprefix("www."), b.removeprefix("www.")
-    return a == b or a.endswith("." + b)
 
 
 class Ariadne:
@@ -24,7 +17,7 @@ class Ariadne:
 
     Invariants (what makes it strong):
       1. A quote must be found VERBATIM in a page the agent actually fetched.
-      2. The answer must pass a type gate and an independent entailment gate.
+      2. The answer must pass type, grounding, subject and entailment gates.
       3. If no candidate passes all gates, the verdict is 'not_found' - never a guess.
       4. Every step is recorded in a hash-chained evidence ledger.
     """
@@ -54,13 +47,27 @@ class Ariadne:
             start_urls = [start_urls]
         spec = classify(question)
         ledger = Ledger()
-        ledger.log("start", start_urls[0],
-                   f"q='{question[:120]}' type={spec.type.value} hints={','.join(spec.hints[:8])}")
+        seeds = [u for u in (normalize_url(s, s) for s in (start_urls or [])) if u]
+        ledger.log("start", seeds[0] if seeds else "",
+                   f"q='{(question or '')[:120]}' type={spec.type.value} hints={','.join(spec.hints[:8])}")
+        if not seeds:
+            ledger.log("give-up", "", "no valid http(s) start URL")
+            return AgentReport(Verdict.BLOCKED, steps=ledger.steps, reason="No valid http(s) start URL was given.")
+        if not spec.hints:
+            ledger.log("give-up", seeds[0], "question names nothing to look for")
+            return AgentReport(Verdict.NOT_FOUND, steps=ledger.steps,
+                               reason="The question names nothing to look for; please rephrase it.")
         self._say(f"question type={spec.type.value}, hints={spec.hints[:8]}")
         qvec = self.embedder.embed([spec.question + " " + " ".join(spec.hints)])[0]
 
         visited, queue = set(), []
         pages_fetched = 0
+
+        def on_site(url):
+            return any(same_site(url, s) for s in seeds)
+
+        def is_subdomain(url):
+            return not any(same_site(s, url) for s in seeds)
 
         def push(url, score, reason):
             if url in visited or any(u == url for _, u, _ in queue):
@@ -68,10 +75,20 @@ class Ariadne:
             queue.append((score, url, reason))
             queue.sort(key=lambda x: -x[0])
 
+        def push_links(links, reason, floor=None, boost=0.0):
+            links = [lk for lk in links if on_site(lk.url)]
+            for lk, sc in zip(links, score_links(links, qvec, self.embedder, spec)):
+                # A subdomain (blog., forum.) is further from the site's own statement of fact.
+                sc = sc + boost - (0.1 if is_subdomain(lk.url) else 0.0)
+                if floor is None or sc >= floor or lk.context == "next-page":
+                    push(lk.url, sc, reason)
+
         def budget_left():
             return pages_fetched < self.max_pages and (time.time() - t0) < self.max_seconds
 
         def attempt(page):
+            if page.status >= 400 or not page.html:
+                return None
             cands = []
             try:
                 cands.extend(structured_candidates(page, spec))
@@ -90,14 +107,19 @@ class Ariadne:
                             cands.extend(llm_candidates(page, spec, self.llm, self.embedder, qvec))
                         except RateLimited:
                             ledger.log("llm-unavailable", page.final_url, "fallback exhausted")
+                        except Exception as e:
+                            ledger.log("llm-error", page.final_url, repr(e)[:200])
                         finally:
                             self.llm.model = primary
                     else:
                         ledger.log("llm-unavailable", page.final_url, "no fallback configured")
                 except Exception as e:
-                    ledger.log("extract-error", page.final_url, repr(e)[:120])
-            if not cands:
+                    ledger.log("llm-error", page.final_url, repr(e)[:200])
+                    self._say(f"LLM error, using rules only: {e.__class__.__name__}")
+            try:
                 cands.extend(rule_candidates(page, spec))
+            except Exception as e:
+                ledger.log("extract-error", page.final_url, repr(e)[:120])
             seen = set()
             for cand in cands:
                 key = (cand.quote[:120], cand.answer[:120])
@@ -112,23 +134,30 @@ class Ariadne:
                     return cand
             return None
 
-        # ---- seed page ----
-        start = start_urls[0]
-        page = self.fetcher.fetch(start)
-        pages_fetched += 1
-        if page.blocked:
-            ledger.log("blocked", start, page.block_reason)
+        # ---- seed pages ----
+        seed_pages, block_reasons = [], []
+        for start in seeds:
+            if not budget_left():
+                break
+            page = self.fetcher.fetch(start)
+            pages_fetched += 1
+            visited.update((start, page.final_url))
+            if page.blocked:
+                ledger.log("blocked", start, page.block_reason)
+                block_reasons.append(page.block_reason)
+                continue
+            ledger.log("fetch", page.final_url,
+                       f"status={page.status} bytes={len(page.html)} rendered={page.rendered}")
+            ev = attempt(page)
+            if ev:
+                return self._found(ev, ledger, t0)
+            seed_pages.append(page)
+        if not seed_pages:
             return AgentReport(Verdict.BLOCKED, steps=ledger.steps,
-                               reason=f"Start page blocked: {page.block_reason}")
-        ledger.log("fetch", page.final_url,
-                   f"status={page.status} bytes={len(page.html)} rendered={page.rendered}")
-        ev = attempt(page)
-        if ev:
-            return self._found(ev, ledger, t0)
-        visited.add(start)
-        visited.add(page.final_url)
+                               reason=f"Start page blocked: {'; '.join(block_reasons) or 'no budget'}")
 
         # ---- reconnaissance: site search, sitemap, outbound links ----
+        page = seed_pages[0]
         search_tpl = find_site_search(page.html, page.final_url)
         if search_tpl and budget_left():
             q = " ".join(spec.hints[:8])
@@ -137,28 +166,38 @@ class Ariadne:
             if not sp.blocked:
                 ledger.log("site-search", sp.final_url, f"query='{q}'")
                 self._say(f"site-search '{q}' -> {sp.final_url}")
-                for lk in extract_links(sp.html, sp.final_url)[:15]:
-                    if same_site(lk.url, start):
-                        push(lk.url, 1.0, "site-search")
+                push_links(extract_links(sp.html, sp.final_url)[:30], "site-search", boost=0.5)
             visited.add(sp.final_url)
 
         if budget_left():
             sm = self.fetcher.fetch(urljoin(page.final_url, "/sitemap.xml"))
             pages_fetched += 1
+            visited.add(sm.final_url)
+            urls = []
             if not sm.blocked and sm.status == 200 and "<loc>" in sm.html:
                 urls = parse_sitemap_urls(sm.html)
+                if "<sitemapindex" in sm.html.lower():
+                    children = urls[:2]
+                    urls = []
+                    for child in children:
+                        if not budget_left():
+                            break
+                        cp = self.fetcher.fetch(child)
+                        pages_fetched += 1
+                        if not cp.blocked:
+                            urls.extend(parse_sitemap_urls(cp.html))
                 ledger.log("sitemap", sm.final_url, f"{len(urls)} urls")
-                links = [Link(url=u, anchor="", context="sitemap") for u in urls if same_site(u, start)]
-                scored = sorted(links, key=lambda lk: scent_score(lk, qvec, self.embedder, spec), reverse=True)
-                for lk in scored[: self.sitemap_top]:
-                    sc = scent_score(lk, qvec, self.embedder, spec)
+            links = [Link(url=u, anchor="", context="sitemap") for u in urls[:3000]
+                     if on_site(u) and not u.lower().endswith(SKIP_EXT + (".xml", ".gz"))]
+            if links:
+                ranked = sorted(zip(score_links(links, qvec, self.embedder, spec), links),
+                                key=lambda x: -x[0])
+                for sc, lk in ranked[: self.sitemap_top]:
                     if sc >= self.scent_threshold - 0.10 or len(queue) < 3:
                         push(lk.url, sc, "sitemap")
-            visited.add(sm.final_url)
 
-        for lk in extract_links(page.html, page.final_url)[:60]:
-            if same_site(lk.url, start):
-                push(lk.url, scent_score(lk, qvec, self.embedder, spec), "link")
+        for sp in seed_pages:
+            push_links(extract_links(sp.html, sp.final_url)[:500], "link")
 
         # ---- scent-guided crawl ----
         while queue and budget_left():
@@ -171,20 +210,22 @@ class Ariadne:
             if page.blocked:
                 ledger.log("blocked", url, page.block_reason)
                 continue
+            if page.final_url in visited and page.final_url != url:
+                continue
+            visited.add(page.final_url)
             ledger.log("fetch", page.final_url, f"status={page.status} score={score:.2f} via={why}")
             self._say(f"[{pages_fetched}/{self.max_pages}] {page.final_url} (scent {score:.2f}, {why})")
             ev = attempt(page)
             if ev:
                 return self._found(ev, ledger, t0)
-            for lk in extract_links(page.html, page.final_url)[:40]:
-                if same_site(lk.url, start):
-                    sc = scent_score(lk, qvec, self.embedder, spec)
-                    if sc >= self.scent_threshold:
-                        push(lk.url, sc, "link")
-            visited.add(page.final_url)
+            if page.status < 400:
+                push_links(extract_links(page.html, page.final_url)[:500], "link", floor=self.scent_threshold)
 
-        if pages_fetched >= self.max_pages:
-            verdict, reason = Verdict.OUT_OF_BUDGET, f"Page budget exhausted ({pages_fetched} pages visited)."
+        unexplored = [u for _, u, _ in queue if u not in visited]
+        if unexplored:
+            verdict = Verdict.OUT_OF_BUDGET
+            reason = (f"Budget exhausted after {pages_fetched} pages and {time.time() - t0:.1f}s "
+                      f"with {len(unexplored)} promising links unexplored.")
         else:
             verdict = Verdict.NOT_FOUND
             reason = (f"No page within reach contained a verifiable answer "

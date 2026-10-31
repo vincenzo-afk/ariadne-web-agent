@@ -81,6 +81,37 @@ class MockHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"User-agent: *\nDisallow: /private\n")
             return
+        if path == "/server-error":
+            self.send_response(500); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html><body><h1>500</h1></body></html>"); return
+        if path == "/rate-limit":
+            self.send_response(429); self.send_header("Retry-After","60"); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html><body>rate limited</body></html>"); return
+        if path == "/basic-auth":
+            self.send_response(401); self.send_header("WWW-Authenticate",'Basic realm="x"'); self.end_headers(); self.wfile.write(b"auth required"); return
+        if path == "/redirect-301":
+            self.send_response(301); self.send_header("Location", f"{base}/target"); self.end_headers(); return
+        if path == "/target":
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html><body><p>target page</p></body></html>"); return
+        if path == "/redirect-loop":
+            self.send_response(302); self.send_header("Location", f"{base}/redirect-loop"); self.end_headers(); return
+        if path == "/redirect-offsite":
+            self.send_response(301); self.send_header("Location", "https://example.com"); self.end_headers(); return
+        if path == "/large-page":
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<p>filler </p>"*700000 + b"<p>answer is 42</p>"); return
+        if path == "/sitemap-malformed.xml":
+            self.send_response(200); self.send_header("Content-Type","application/xml"); self.end_headers(); self.wfile.write(b"<urlset><loc>broken"); return
+        if path.startswith("/pagination/"):
+            n = path.split("/")[-1]; nxt = f'<a href="{base}/pagination/{int(n)+1}">next</a>' if n in ("1","2") else ""
+            ans = "<p>Answer is 42 on page 3.</p>" if n == "3" else ""
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(f"<html><body><h1>Page {n}</h1>{nxt}{ans}</body></html>".encode()); return
+        if path.startswith("/unicode-path/"):
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write("<html><body><p>unicode path ok</p></body></html>".encode("utf-8")); return
+        if path == "/query":
+            foo = parse_qs(parsed.query).get("foo", [""])[0]
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(f"<html><body><p>foo={foo}</p></body></html>".encode()); return
+        if path == "/fragment":
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html><body><p>fragment page</p></body></html>"); return
+        if path == "/deep/a/b/c/d/e/page":
+            self.send_response(200); self.send_header("Content-Type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(b"<html><body><p>deep page</p></body></html>"); return
         body = {
             "/": HOME,
             "/products/phone-x": PHONE,
@@ -99,6 +130,39 @@ class MockHandler(BaseHTTPRequestHandler):
             "/conditional": "<html><body><p>If you return within 30 days, you get a refund.</p></body></html>",
             "/private": "<html><body><p>private data</p></body></html>",
             "/empty-question-page": "<html><body></body></html>",
+            "/plain-product": "<p>The Phone X price is $999 and it ships free.</p>",
+            "/table-specs": "<table><tr><th>Battery</th><td>4000 mAh</td></tr></table>",
+            "/dl-specs": "<dl><dt>Weight</dt><dd>180g</dd></dl>",
+            "/microdata": '<span itemprop="price" content="999">$999</span>',
+            "/og-meta": '<meta property="og:description" content="Founded in 2001">',
+            "/title-only": "<title>Founded in 2001</title>",
+            "/alt-only": '<img src="x.png" alt="Founded in 2001">',
+            "/h1-only": "<h1>Founded in 2001</h1>",
+            "/bullet-list": "<ul><li>30 days return</li><li>Free shipping</li></ul>",
+            "/numbered-list": "<ol><li>First</li><li>Second</li></ol>",
+            "/blockquote": "<blockquote>Returns accepted within 30 days</blockquote>",
+            "/footer-only": "<html><body></body><footer><p>Founded in 2001</p></footer></html>",
+            "/hidden-comment": "<!-- The real price is 999 -->",
+            "/deprecated": "<p><s>Price: $800</s></p><p>Current: $999</p>",
+            "/multilingual": "<p>Hello world.</p><p>Hola mundo.</p>",
+            "/unicode-utf8": "<p>Price: €999 — em dash — 日本語</p>",
+            "/unicode-emoji": "<p>Price: $999 🎉</p>",
+            "/entities": "<p>Price: $999 &amp; up &#8212; em</p>",
+            "/smart-quotes": '<p>Return within 30 days — “no questions asked”</p>',
+            "/image-only": "<html><body><img src='answer.png'></body></html>",
+            "/js-only": '<div id="root"></div>' + "<script></script>"*8,
+            "/empty-body": "<html><head></head><body></body></html>",
+            "/not-found": None,
+            "/private": "<html><body><p>private data</p></body></html>",
+            "/pdf-only": '<a href="x.pdf">pdf</a>',
+            "/cookie-wall": "<div class='cookie'>accept</div><p style='display:none'>hidden</p>",
+            "/conflict-a": "<p>The warranty is 2 years.</p>",
+            "/conflict-b": "<p>The warranty is 3 years.</p>",
+            "/official": "<p>The warranty is 2 years.</p>",
+            "/forum": "<p>The warranty is 5 years.</p>",
+            "/conditional": "<p>If you return within 30 days, you get a refund.</p>",
+            "/negated": "<p>We do NOT support wireless charging.</p>",
+            "/conflict-a": "<p>The warranty is 2 years.</p>",
         }.get(path, ABOUT)
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -117,7 +181,7 @@ def make_agent():
     from ariadne.fetch import Fetcher
     from ariadne.llm import StubLLM
     return Ariadne(llm=StubLLM(),
-                   fetcher=Fetcher(respect_robots=False, delay=0, render=False),
+                   fetcher=Fetcher(respect_robots=False, delay=0, render=False, allow_private=True),
                    embedder=HashingEmbedder(),
                    max_pages=8, max_seconds=60, verbose=False)
 

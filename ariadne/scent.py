@@ -29,3 +29,13 @@ def scent_score(link, qvec, embedder, spec):
     sim = cosine(qvec, embedder.embed([text])[0])
     bonus = 0.25 * _keyword_bonus(spec.hints, link.anchor, link.context, path_tokens(link.url))
     return sim + bonus
+
+
+def score_links(links, qvec, embedder, spec):
+    """Batch form of scent_score: one embedding call for the whole page of links."""
+    if not links:
+        return []
+    vecs = embedder.embed([f"{lk.anchor} {lk.context} {path_tokens(lk.url)}" for lk in links])
+    return [cosine(qvec, v) + 0.25 * _keyword_bonus(spec.hints, lk.anchor, lk.context, path_tokens(lk.url))
+            + (0.3 if lk.context == "next-page" else 0.0)
+            for lk, v in zip(links, vecs)]

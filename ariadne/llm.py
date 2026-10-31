@@ -61,10 +61,10 @@ class OpenAICompatLLM:
             msg = r.text if (r.text or "").strip() else "rate limited"
             raise RateLimited(msg)
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        return (body or r.json())["choices"][0]["message"]["content"] or ""
 
 
-def GeminiLLM(model=None, fallback_model=None, api_key=None, timeout=15):
+def GeminiLLM(model=None, fallback_model=None, api_key=None, timeout=60):
     """Returns an OpenAICompatLLM configured for Google Gemini's OpenAI-compatible endpoint.
     Reads LLM_API_KEY, LLM_MODEL, LLM_FALLBACK_MODEL from env if args are None."""
     base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -73,10 +73,12 @@ def GeminiLLM(model=None, fallback_model=None, api_key=None, timeout=15):
     if not api_key:
         raise RuntimeError("LLM_API_KEY not set; Gemini unavailable")
     if model is None:
-        model = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
+        model = os.environ.get("LLM_MODEL", "gemini-3.8-flash")
     if fallback_model is None:
-        fallback_model = os.environ.get("LLM_FALLBACK_MODEL", "gemini-2.5-flash-lite")
-    extra_body = {"reasoning_effort": "none"}
+        fallback_model = os.environ.get("LLM_FALLBACK_MODEL", "gemini-3.5-flash-lite")
+    extra_body = None
+    if os.environ.get("LLM_DISABLE_THINKING", "").lower() == "true":
+        extra_body = {"reasoning_effort": "low"}
     inst = OpenAICompatLLM(base_url=base_url, api_key=api_key, model=model,
                            timeout=timeout, extra_body=extra_body,
                            fallback_model=fallback_model)

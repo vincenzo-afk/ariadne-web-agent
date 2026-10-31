@@ -23,16 +23,17 @@ class HashingEmbedder:
 
 
 class STEmbedder:
-    def __init__(self, model_name="all-MiniLM-L6-v2"):
+    def __init__(self, model_name="all-MiniLM-L6-v2", local_only=False):
         from sentence_transformers import SentenceTransformer
-        self.m = SentenceTransformer(model_name)
+        self.m = SentenceTransformer(model_name, local_files_only=local_only)
 
     def embed(self, texts):
         return [list(map(float, row)) for row in self.m.encode(list(texts))]
 
 
 def default_embedder():
+    # Only use a model that is already on disk: a default run must not download one.
     try:
-        return STEmbedder()
+        return STEmbedder(local_only=True)
     except Exception:
         return HashingEmbedder()

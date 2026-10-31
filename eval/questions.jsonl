@@ -1,0 +1,26 @@
+{"id":"pep-author","question":"Who wrote PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["Guido van Rossum"]}
+{"id":"pep-created","question":"When was PEP 8 created?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["05-Jul-2001","2001"]}
+{"id":"pep-status","question":"What is the status of PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["Active"]}
+{"id":"pep-line","question":"What is the maximum line length recommended by PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["79"]}
+{"id":"pep-indent","question":"Does PEP 8 recommend 4 spaces for indentation?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["yes"]}
+{"id":"pep-title","question":"What is the title of PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["Style Guide for Python Code"]}
+{"id":"pep-nav","question":"Who wrote PEP 257?","start_urls":["https://peps.python.org/"],"accept":["David Goodger"]}
+{"id":"py-version","question":"What is the current Python version number?","start_urls":["https://docs.python.org/3/"],"accept_regex":"3\\.\\d+"}
+{"id":"py-len","question":"What does the len function return?","start_urls":["https://docs.python.org/3/library/functions.html"],"accept":["length"]}
+{"id":"req-license","question":"What is the license of requests?","start_urls":["https://pypi.org/project/requests/"],"accept":["Apache"]}
+{"id":"req-author","question":"Who is the author of requests?","start_urls":["https://pypi.org/project/requests/"],"accept":["Kenneth Reitz"]}
+{"id":"req-version","question":"What is the latest version of requests?","start_urls":["https://pypi.org/project/requests/"],"accept_regex":"2\\.\\d+\\.\\d+"}
+{"id":"book-price","question":"What is the price of A Light in the Attic?","start_urls":["https://books.toscrape.com/"],"accept":["51.77"]}
+{"id":"book-upc","question":"What is the UPC of A Light in the Attic?","start_urls":["https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"],"accept":["a897fe39b1053632"]}
+{"id":"book-tax","question":"What is the tax on A Light in the Attic?","start_urls":["https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"],"accept":["0.00"]}
+{"id":"quote-born","question":"When was Albert Einstein born?","start_urls":["https://quotes.toscrape.com/"],"accept":["March 14, 1879","1879"]}
+{"id":"wiki-father","question":"Who is the father of Ariadne?","start_urls":["https://en.wikipedia.org/wiki/Ariadne"],"accept":["Minos"]}
+{"id":"polite-pep","question":"Can you please tell me who wrote PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":["Guido van Rossum"]}
+{"id":"no-france","question":"What is the capital of France?","start_urls":["https://docs.python.org/3/"],"accept":null}
+{"id":"no-pyprice","question":"What is the price of Python?","start_urls":["https://docs.python.org/3/"],"accept":null}
+{"id":"no-ceo","question":"Who is the CEO of Books to Scrape?","start_urls":["https://books.toscrape.com/"],"accept":null}
+{"id":"no-battery","question":"What is the battery capacity of A Light in the Attic?","start_urls":["https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"],"accept":null}
+{"id":"no-pepprice","question":"What is the price of PEP 8?","start_urls":["https://peps.python.org/pep-0008/"],"accept":null}
+{"id":"no-phone","question":"What is the phone number of the Quotes to Scrape office?","start_urls":["https://quotes.toscrape.com/"],"accept":null}
+{"id":"no-reqstock","question":"What is the stock ticker of requests?","start_urls":["https://pypi.org/project/requests/"],"accept":null}
+{"id":"no-wrong-item","question":"What is the price of Harry Potter and the Goblet of Fire?","start_urls":["https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"],"accept":null}
