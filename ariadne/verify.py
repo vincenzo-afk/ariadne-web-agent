@@ -8,7 +8,7 @@ from .understand import keywords
 
 MONTHS_RE = (r"(january|february|march|april|may|june|july|august|september|october|"
              r"november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)")
-NUM_RE = re.compile(r"-?[\$€£]?\s?\d[\d,]*(?:\.\d+)?\s*(?:%|[a-zA-Z]{1,10})?")
+NUM_RE = re.compile(r"-?[\$â‚¬Â£]?\s?\d[\d,]*(?:\.\d+)?\s*(?:%|[a-zA-Z]{1,10})?")
 
 
 def normalize_ws(s):
@@ -95,6 +95,12 @@ def verify(evidence, spec, llm=None):
         resp = llm.complete(VERIFY_PROMPT.format(question=spec.question,
                                                  answer=evidence.answer,
                                                  quote=evidence.quote))
+        # No model-swap fallback here on purpose: verification must stay independent
+        # of the extractor's model, or the extractor could pass its own check.
+        # Degrade to the deterministic _rule_gate instead.
+        if ok2:
+            return True, "entailment-gate: rate-limited — using deterministic fallback"
+        return False, "entailment-gate: rate-limited — using deterministic fallback"
     except Exception:
         resp = ""
     stripped = (resp or "").strip().upper()
@@ -124,4 +130,5 @@ def _rule_gate(evidence, spec):
     if qk and overlap < 0.2:
         return False, "insufficient question/quote overlap"
     return True, "ok" 
+
 
