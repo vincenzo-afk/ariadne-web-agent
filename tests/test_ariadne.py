@@ -1,7 +1,8 @@
-"""Offline end-to-end tests for Ariadne against a mock website.
+﻿"""Offline end-to-end tests for Ariadne against a mock website.
 Runs with plain `python tests/test_ariadne.py` (no pytest required),
 and also works under pytest."""
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -61,6 +62,25 @@ class MockHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"login required")
             return
+        if path == "/slow":
+            time.sleep(10)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"<html><body><p>slow page</p></body></html>")
+            return
+        if path == "/not-found":
+            self.send_response(404)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"<html><body><h1>404 Not Found</h1></body></html>")
+            return
+        if path == "/robots.txt":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"User-agent: *\nDisallow: /private\n")
+            return
         body = {
             "/": HOME,
             "/products/phone-x": PHONE,
@@ -72,6 +92,13 @@ class MockHandler(BaseHTTPRequestHandler):
                              f"<url><loc>{base}/support</loc></url>"
                              f"<url><loc>{base}/about</loc></url></urlset>"),
             "/search": search_page(base, q),
+            "/image-only": "<html><body><img src=\"answer.png\"></body></html>",
+            "/js-only": "<html><body><div id=\"root\"></div>" + "<script></script>"*8 + "</body></html>",
+            "/conflict-a": "<html><body><p>The warranty is 2 years.</p></body></html>",
+            "/conflict-b": "<html><body><p>The warranty is 3 years.</p></body></html>",
+            "/conditional": "<html><body><p>If you return within 30 days, you get a refund.</p></body></html>",
+            "/private": "<html><body><p>private data</p></body></html>",
+            "/empty-question-page": "<html><body></body></html>",
         }.get(path, ABOUT)
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -195,3 +222,4 @@ def run_all():
 
 if __name__ == "__main__":
     raise SystemExit(0 if run_all() else 1)
+
